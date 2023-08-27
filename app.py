@@ -81,12 +81,6 @@ with st.sidebar:
 
     st.button('Clear Chat History', on_click=reset_chat)
 
-    st.markdown(
-        """
-        Made with ❤️ by [Pranav Bobde](https://github.com/Pranav-Bobde)
-        """
-    )
-
 pdf = st.file_uploader("Upload a PDF file", type=["pdf"], disabled=not token)
 if not pdf:
     st.warning("Please upload a pdf file.", icon="⚠️")

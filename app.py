@@ -1,7 +1,33 @@
 import streamlit as st
+from langchain.vectorstores import FAISS
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains import RetrievalQA
+from langchain.chat_models import ChatOpenAI
+from pdfminer.high_level import extract_text
 
-def gen_pdf_summary():
-    return "This is a summary of the pdf file."
+def process_pdf(pdf):
+    # set pdf name
+    st.session_state["pdf_name"] = pdf.name[:-4]
+    # extract text from pdf
+    pdf_text = extract_text(pdf)
+    # get texts/chunks from pdf
+    texts = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100,
+    ).split_text(pdf_text)
+    # generate embeddings and vectorstore
+    embeddings = OpenAIEmbeddings(openai_api_key=token)
+    vectorstore = FAISS.from_texts(texts=texts, embedding=embeddings)
+    st.session_state["vectorstore"] = vectorstore
+
+def gen_response(question):
+    llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0, openai_api_key=token)
+    vectorstore = st.session_state["vectorstore"]
+
+    qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
+    res = qa_chain({"query": question})
+    return res["result"]
 
 def display_messages():
     for msg in st.session_state["messages"]:
@@ -9,7 +35,7 @@ def display_messages():
             st.write(msg["content"])
 
 def reset_chat():
-    content = f"Welcome to the PDF {st.session_state['pdf_name']}. \n {st.session_state['pdf_summary']}"
+    content = f"Welcome to the PDF - '{st.session_state['pdf_name']}'. Feel free to ask any questions. 🤗"
     st.session_state["messages"] = [
         {
             "role": "assistant",
@@ -61,17 +87,14 @@ with st.sidebar:
         """
     )
 
-pdf = st.file_uploader("Upload a PDF file", type=["pdf"])
+pdf = st.file_uploader("Upload a PDF file", type=["pdf"], disabled=not token)
 if not pdf:
     st.warning("Please upload a pdf file.", icon="⚠️")
 else:
     # if new pdf uploaded
     if pdf.name[:-4] != st.session_state.get("pdf_name", ""):
-        # set pdf name
-        st.session_state["pdf_name"] = pdf.name[:-4]
-        # set pdf summary
-        pdf_summary = gen_pdf_summary()
-        st.session_state["pdf_summary"] = pdf_summary
+        with st.spinner("Processing..."):
+            process_pdf(pdf)
         reset_chat()
 
     # display messages
@@ -79,7 +102,7 @@ else:
 
     # if same pdf 
     # get user input
-    if question := st.chat_input(disabled=not pdf):
+    if question := st.chat_input(disabled=not (token and pdf)):
         # add user input to messages
         st.session_state["messages"].append(
             {
@@ -92,7 +115,7 @@ else:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 # get response from openai
-                response = "This is a response from openai."
+                response = gen_response(question)
 
                 # add response to messages
                 st.session_state["messages"].append(
